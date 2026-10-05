@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Music Theory: From Basics to Harmony</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Noto+Music&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            display: ['Fraunces', 'Georgia', 'serif'],
+            music: ['"Noto Music"', 'serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style type="text/tailwindcss">
+    @layer components {
+      .lesson-body p { @apply mb-4 leading-relaxed; }
+      .lesson-body ul { @apply mb-4 ml-5 list-disc space-y-1.5 leading-relaxed; }
+      .lesson-body ol { @apply mb-4 ml-5 list-decimal space-y-1.5 leading-relaxed; }
+      .lesson-body a { @apply font-medium text-indigo-600 underline decoration-indigo-300 underline-offset-2 hover:text-indigo-800 dark:text-indigo-300 dark:decoration-indigo-500; }
+      .lesson-body table { @apply mb-5 w-full overflow-hidden rounded-xl border border-stone-200 text-sm dark:border-stone-700; border-collapse: separate; border-spacing: 0; }
+      .lesson-body th { @apply bg-stone-100 px-3 py-2 text-left font-semibold text-stone-600 dark:bg-stone-800 dark:text-stone-300; }
+      .lesson-body td { @apply border-t border-stone-200 px-3 py-2 dark:border-stone-700; }
+      .lesson-body td.music { @apply font-serif text-xl; }
+      .lesson-body .tip { @apply mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100; }
+      .lesson-body .pattern { @apply mb-4 rounded-xl bg-indigo-50 px-4 py-3 text-center font-mono text-base font-semibold tracking-wide text-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-100; }
+      .lesson-body .pattern span { @apply text-rose-600 dark:text-rose-400; }
+      .lesson-body .pattern-inline { @apply rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-sm font-semibold text-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-100; }
+      .lesson-body kbd, kbd { @apply rounded border border-stone-300 bg-white px-1.5 py-0.5 font-mono text-xs text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200; }
+      .btn { @apply inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-40; }
+      .btn-primary { @apply btn bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400; }
+      .btn-ghost { @apply btn border border-stone-300 bg-white text-stone-700 hover:bg-stone-100 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-200 dark:hover:bg-stone-800; }
+      .card { @apply rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5 dark:border-stone-800 dark:bg-stone-900; }
+      .answer-btn { @apply btn justify-center border border-stone-300 bg-white py-2 text-stone-800 hover:border-indigo-400 hover:bg-indigo-50 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800; }
+      .answer-btn.correct { @apply border-emerald-500 bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-100; }
+      .answer-btn.wrong { @apply border-rose-500 bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-100; }
+    }
+    .score { color: #292524; }
+    .score svg { display: block; max-width: 100%; height: auto; overflow: visible; }
+    .score .ev { transition: color .08s; }
+    .score .ev:hover { color: #6366f1; }
+    .score .ev.playing { color: #4f46e5; }
+    .score .note-name { opacity: .6; }
+    .score .nct { color: #e11d48; }
+    .score .mix { color: #7c3aed; }
+    .score .note-label { fill: #57534e; }
+    .score .ev.playing .note-label { fill: #4f46e5; }
+    @media (prefers-color-scheme: dark) {
+      .score { color: #e7e5e4; }
+      .score .ev:hover { color: #a5b4fc; }
+      .score .ev.playing { color: #a5b4fc; }
+      .score .note-label { fill: #a8a29e; }
+      .score .ev.playing .note-label { fill: #a5b4fc; }
+      .score .nct { color: #fb7185; }
+      .score .mix { color: #a78bfa; }
+    }
+    /* Piano */
+    .piano { position: relative; height: 112px; display: flex; user-select: none; -webkit-user-select: none; touch-action: none; }
+    .piano .white { position: relative; width: 30px; flex: 0 0 30px; height: 100%; border: 1px solid #d6d3d1; border-top: 0; border-radius: 0 0 6px 6px; background: linear-gradient(#fff, #fafaf9); cursor: pointer; }
+    .piano .black { position: absolute; top: 0; width: 20px; height: 64%; z-index: 2; border-radius: 0 0 4px 4px; background: linear-gradient(#3f3f46, #18181b); cursor: pointer; box-shadow: 0 2px 2px rgba(0,0,0,.35); }
+    .piano .white.on { background: linear-gradient(#c7d2fe, #a5b4fc); }
+    .piano .black.on { background: linear-gradient(#818cf8, #4f46e5); }
+    .piano .lbl { position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 10px; color: #a8a29e; pointer-events: none; }
+    .piano .white .hint { position: absolute; bottom: 22px; left: 0; right: 0; text-align: center; font: 600 10px ui-monospace, monospace; color: #6366f1; pointer-events: none; }
+    .piano .black .hint { position: absolute; bottom: 5px; left: 0; right: 0; text-align: center; font: 600 9px ui-monospace, monospace; color: #c7d2fe; pointer-events: none; }
+    .no-scrollbar::-webkit-scrollbar { height: 6px; }
+    .no-scrollbar::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body class="bg-stone-50 font-sans text-stone-800 antialiased dark:bg-stone-950 dark:text-stone-100">
+  <!-- Top bar -->
+  <header class="sticky top-0 z-30 border-b border-stone-200 bg-stone-50/90 backdrop-blur dark:border-stone-800 dark:bg-stone-950/90">
+    <div class="flex h-14 items-center gap-3 px-4">
+      <button id="menu-btn" class="btn-ghost px-2 lg:hidden" aria-label="Open lesson menu">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <a href="#" class="flex items-center gap-2">
+        <span class="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 font-music text-xl text-white">𝄞</span>
+        <span class="font-display text-lg font-bold tracking-tight">Music Theory</span>
+      </a>
+      <div class="ml-auto flex items-center gap-4 text-sm">
+        <label class="hidden items-center gap-2 sm:flex" title="Playback speed">
+          <span class="text-stone-500 dark:text-stone-400">Tempo</span>
+          <input id="speed" type="range" min="0.5" max="1.5" step="0.05" class="w-24 accent-indigo-600">
+          <span id="speed-val" class="w-10 tabular-nums text-stone-600 dark:text-stone-300">100%</span>
+        </label>
+        <label class="flex cursor-pointer items-center gap-2">
+          <input id="names" type="checkbox" class="h-4 w-4 rounded accent-indigo-600">
+          <span>Note names</span>
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex">
+    <!-- Sidebar -->
+    <div id="backdrop" class="fixed inset-0 z-30 hidden bg-black/40 lg:hidden"></div>
+    <aside id="sidebar" class="fixed bottom-0 left-0 top-14 z-40 w-72 -translate-x-full overflow-y-auto border-r border-stone-200 bg-stone-50 pb-44 transition-transform lg:sticky lg:top-14 lg:h-[calc(100vh-3.5rem)] lg:translate-x-0 dark:border-stone-800 dark:bg-stone-950"></aside>
+
+    <!-- Lesson content -->
+    <main id="content" class="min-w-0 flex-1 px-4 pb-52 pt-6 sm:px-8"></main>
+  </div>
+
+  <!-- Piano -->
+  <div id="piano-panel" class="fixed inset-x-0 bottom-0 z-[45] border-t border-stone-200 bg-white/95 backdrop-blur dark:border-stone-800 dark:bg-stone-900/95">
+    <div class="flex items-center gap-3 px-4 py-1.5 text-xs text-stone-500 dark:text-stone-400">
+      <button id="piano-toggle" class="font-semibold text-stone-700 hover:text-indigo-600 dark:text-stone-200">▾ Keyboard</button>
+      <span class="hidden sm:inline">Play with your mouse or keys <kbd>A</kbd>–<kbd>K</kbd> · <kbd>Z</kbd>/<kbd>X</kbd> octave</span>
+      <span id="piano-octave" class="ml-auto"></span>
+    </div>
+    <div id="piano-wrap" class="no-scrollbar overflow-x-auto px-4 pb-2">
+      <div id="piano" class="piano mx-auto w-max"></div>
+    </div>
+  </div>
+
+  <script src="js/notation.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/lessons.js"></script>
+  <script src="js/sources.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
