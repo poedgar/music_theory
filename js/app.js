@@ -11,6 +11,7 @@ const App = (() => {
     speed: store.get('speed', 1),
     names: store.get('names', false),
     done: new Set(store.get('done', [])),
+    quiz: store.get('quiz', {}), // lesson id → best score
   };
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -80,6 +81,7 @@ const App = (() => {
     let base = 60;
     const held = new Map();
     const marks = new Map();
+    let listener = null; // receives every note the learner plays (quiz answers)
 
     function build() {
       const root = $('#piano');
@@ -98,6 +100,7 @@ const App = (() => {
           e.preventDefault();
           const v = AudioEngine.playNote(m, null, 1.6, 0.85);
           mark(m, true);
+          listener?.(m);
           const up = () => { v.release(); mark(m, false); window.removeEventListener('pointerup', up); };
           window.addEventListener('pointerup', up);
         });
@@ -124,6 +127,7 @@ const App = (() => {
         if (m > HI || held.has(key)) return;
         held.set(key, { m, v: AudioEngine.playNote(m, null, 6, 0.85) });
         mark(m, true);
+        listener?.(m);
       });
       window.addEventListener('keyup', e => {
         const key = e.key.toLowerCase();
@@ -158,7 +162,10 @@ const App = (() => {
       keys.get(m)?.classList.toggle('on', n > 0);
     }
 
-    return { build, mark };
+    const listen = fn => { listener = fn; };
+    const show = () => { if ($('#piano-wrap').classList.contains('hidden')) $('#piano-toggle').click(); };
+
+    return { build, mark, listen, show };
   })();
 
   // ───────── sidebar ─────────
@@ -243,6 +250,7 @@ const App = (() => {
           <h2 class="mb-2 text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-300">🎧 Listen for it</h2>
           <ul class="list-disc space-y-1 pl-5 text-stone-700 dark:text-stone-300">${lesson.listen.map(x => `<li>${x}</li>`).join('')}</ul>
         </section>` : ''}
+        <div id="quiz"></div>
         ${sourcesBox(lesson)}
         <div class="mt-10 flex flex-wrap items-center gap-3 border-t border-stone-200 pt-6 dark:border-stone-800">
           ${prev ? `<a href="#${prev.id}" class="btn-ghost">← ${prev.title}</a>` : ''}
@@ -266,6 +274,13 @@ const App = (() => {
       doneBtn.classList.toggle('!text-emerald-700', d);
     };
     paintDone();
+    renderQuiz($('#quiz', c), lesson.id, () => {
+      if (state.done.has(lesson.id)) return;
+      state.done.add(lesson.id);
+      store.set('done', [...state.done]);
+      paintDone();
+      renderSidebar(lesson.id);
+    });
     doneBtn.addEventListener('click', () => {
       state.done.has(lesson.id) ? state.done.delete(lesson.id) : state.done.add(lesson.id);
       store.set('done', [...state.done]);
@@ -424,6 +439,211 @@ const App = (() => {
       });
       btn.innerHTML = '■ Stop';
     });
+  }
+
+  // ───────── quizzes ─────────
+  const QUIZ_PASS = 0.8;
+
+  /** End-of-lesson quiz. Calls onPass when the learner scores at least QUIZ_PASS. */
+  function renderQuiz(root, lessonId, onPass) {
+    const items = QUIZZES[lessonId];
+    if (!items?.length) return;
+    const n = items.length;
+    const wrap = h(`
+      <section class="mt-10 scroll-mt-20">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 class="font-display text-xl font-bold">Quiz <span class="text-sm font-normal text-stone-500 dark:text-stone-400">· check your understanding</span></h2>
+          <span class="quiz-status text-sm text-stone-500 dark:text-stone-400"></span>
+        </div>
+        <ol class="quiz-list mt-3 space-y-4"></ol>
+        <div class="quiz-result card mt-4 hidden text-center"></div>
+      </section>`);
+    root.appendChild(wrap);
+    const list = $('.quiz-list', wrap), result = $('.quiz-result', wrap), status = $('.quiz-status', wrap);
+    let right, answered;
+
+    const paintStatus = () => {
+      const best = state.quiz[lessonId];
+      status.innerHTML = `${answered}/${n} answered${best != null ? ` · best <b>${best}/${n}</b>` : ''}`;
+    };
+
+    // Shared by both question types: show the verdict and update the score.
+    const record = (li, item, ok, extra = '') => {
+      const fb = $('.q-fb', li);
+      fb.classList.remove('hidden');
+      fb.innerHTML = (ok
+        ? '<b class="text-emerald-600 dark:text-emerald-400">Correct.</b> '
+        : '<b class="text-rose-600 dark:text-rose-400">Not quite.</b> ') +
+        extra + `<span class="text-stone-600 dark:text-stone-400">${item.explain || ''}</span>`;
+      if (ok) right++;
+      answered++;
+      paintStatus();
+      if (answered === n) finish();
+    };
+
+    const card = (item, qi, inner) => {
+      const li = h(`
+        <li class="card">
+          <p class="font-medium"><span class="mr-1 text-stone-400">${qi + 1}.</span> ${item.q}</p>
+          ${item.score ? '<div class="flex items-end gap-3"><div class="score mt-3 w-full max-w-[220px]"></div><button class="q-play btn-ghost mb-2 hidden">▶ Play</button></div>' : ''}
+          ${inner}
+          <p class="q-fb mt-3 hidden text-sm"></p>
+        </li>`);
+      if (item.score) {
+        requestAnimationFrame(() => {
+          const events = Theory.parseScore(item.score);
+          const sc = mountScore($('.score', li), { events, clef: item.clef, key: item.key, showNames: false, clickable: !item.answer, bpm: 80 });
+          // A keyboard question asks for the shown notes, so don't give them away by ear.
+          if (!item.answer && events.some(e => e.notes)) {
+            const btn = $('.q-play', li);
+            btn.classList.remove('hidden');
+            wirePlayButton(btn, sc, false);
+          }
+        });
+      }
+      return li;
+    };
+
+    const choiceQuestion = (item, qi) => {
+      const opts = shuffle(item.options.map((text, i) => ({ text, ok: i === 0 })));
+      const li = card(item, qi, `
+        <div class="mt-3 grid gap-2 sm:grid-cols-2">
+          ${opts.map((o, i) => `<button class="answer-btn !justify-start text-left" data-i="${i}">${o.text}</button>`).join('')}
+        </div>`);
+      let locked = false;
+      li.querySelectorAll('.answer-btn').forEach(b => b.addEventListener('click', () => {
+        if (locked) return;
+        locked = true;
+        const ok = opts[+b.dataset.i].ok;
+        b.classList.add(ok ? 'correct' : 'wrong');
+        li.querySelectorAll('.answer-btn').forEach((x, i) => {
+          if (opts[i].ok) x.classList.add('correct');
+          x.disabled = true;
+          x.classList.add('!opacity-100');
+        });
+        record(li, item, ok);
+      }));
+      return li;
+    };
+
+    /**
+     * Answered on the piano. item.answer is one note ('C4' = that exact key, 'F#' = any octave),
+     * or an array: a chord in any order and octave, or with item.inOrder a sequence such as a scale.
+     */
+    const keyboardQuestion = (item, qi) => {
+      const exact = typeof item.answer === 'string' && /\d$/.test(item.answer);
+      const mode = typeof item.answer === 'string' ? 'note' : item.inOrder ? 'seq' : 'chord';
+      // Spell the target notes rising from octave 4, so they can be replayed as written.
+      let prev = -Infinity;
+      const targets = [].concat(item.answer).map(name => {
+        if (/\d$/.test(name)) return Theory.parseNote(name);
+        let oct = 4, nt = Theory.parseNote(name + oct);
+        while (nt.midi <= prev) nt = Theory.parseNote(name + ++oct);
+        prev = nt.midi;
+        return nt;
+      });
+      const pc = m => m % 12;
+      const names = new Map(targets.map(t => [pc(t.midi), Theory.pretty(t)]));
+      const SHARPS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+      const label = m => (names.get(pc(m)) || SHARPS[pc(m)]) + (exact ? Math.floor(m / 12) - 1 : '');
+      const hint = { note: exact ? 'Octave matters.' : 'Any octave.', chord: 'Any order, any octave.', seq: 'In order, any octave.' }[mode];
+
+      const li = card(item, qi, `
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          <button class="kb-arm btn-primary">🎹 Answer on the keyboard</button>
+          <span class="text-xs text-stone-500 dark:text-stone-400">${hint}</span>
+        </div>
+        <p class="kb-played mt-2 hidden font-mono text-sm"></p>`);
+      const arm = $('.kb-arm', li), playedEl = $('.kb-played', li);
+      let played = [], done = false;
+
+      const paintPlayed = (wrongMidi) => {
+        playedEl.classList.remove('hidden');
+        playedEl.innerHTML = 'You played: ' + played.map(m => `<span class="text-emerald-600 dark:text-emerald-400">${label(m)}</span>`).join(' ') +
+          (wrongMidi != null ? ` <span class="text-rose-600 dark:text-rose-400 line-through">${label(wrongMidi)}</span>` : '');
+      };
+      const end = (ok, wrongMidi) => {
+        done = true;
+        Piano.listen(null);
+        li.classList.remove('ring-2', 'ring-indigo-400');
+        arm.remove();
+        paintPlayed(wrongMidi);
+        const answerText = exact ? Theory.pretty(targets[0], true) : targets.map(t => Theory.pretty(t)).join(mode === 'seq' ? ' – ' : ' ');
+        record(li, item, ok, ok ? '' : `The answer is <b>${answerText}</b>, now playing on the keyboard. `);
+        if (!ok) {
+          // Play the right answer, lighting up its keys.
+          const src = mode === 'chord' ? `(${targets.map(t => t.name).join(' ')})/w` : targets.map(t => t.name + (mode === 'seq' ? '/q' : '/h')).join(' ');
+          const events = Theory.parseScore(src);
+          setTimeout(() => Player.play(events, {
+            bpm: 100, speed: state.speed,
+            onEvent: (i, on) => events[i].notes?.forEach(nt => Piano.mark(nt.midi, on)),
+          }), 500);
+        }
+      };
+      const hear = m => {
+        if (done) return;
+        if (mode === 'note') {
+          const ok = exact ? m === targets[0].midi : pc(m) === pc(targets[0].midi);
+          if (ok) played.push(m);
+          return end(ok, ok ? null : m);
+        }
+        if (mode === 'seq') {
+          if (pc(m) !== pc(targets[played.length].midi)) return end(false, m);
+          played.push(m);
+          return played.length === targets.length ? end(true) : paintPlayed();
+        }
+        // Chord: every note must belong to it; repeats and octave doublings are fine.
+        if (!names.has(pc(m))) return end(false, m);
+        if (!played.some(p => pc(p) === pc(m))) played.push(m);
+        return played.length === names.size ? end(true) : paintPlayed();
+      };
+      arm.addEventListener('click', () => {
+        if (done) return;
+        disarmOthers?.();
+        disarmOthers = () => {
+          li.classList.remove('ring-2', 'ring-indigo-400');
+          arm.textContent = '🎹 Answer on the keyboard';
+        };
+        Piano.show();
+        Piano.listen(hear);
+        li.classList.add('ring-2', 'ring-indigo-400');
+        arm.textContent = 'Listening… play on the keyboard below';
+      });
+      return li;
+    };
+    let disarmOthers = null;
+
+    const question = (item, qi) => (item.answer ? keyboardQuestion : choiceQuestion)(item, qi);
+
+    const finish = () => {
+      const prev = state.quiz[lessonId];
+      if (prev == null || right > prev) { state.quiz[lessonId] = right; store.set('quiz', state.quiz); }
+      const passed = right / n >= QUIZ_PASS;
+      result.classList.remove('hidden');
+      result.innerHTML = `
+        <div class="font-display text-2xl font-bold">${right} / ${n}</div>
+        <p class="mt-1 text-sm text-stone-600 dark:text-stone-400">${right === n
+          ? 'Perfect score! Lesson marked complete.'
+          : passed ? 'Well done. Lesson marked complete.' : 'Review the lesson above and try again.'}</p>
+        <button class="quiz-retry btn-ghost mt-3">↻ Try again</button>`;
+      $('.quiz-retry', result).addEventListener('click', () => {
+        start();
+        wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      paintStatus();
+      if (passed) onPass?.();
+    };
+
+    const start = () => {
+      right = 0; answered = 0;
+      Piano.listen(null);
+      disarmOthers = null;
+      list.innerHTML = '';
+      result.classList.add('hidden');
+      items.forEach((item, qi) => list.appendChild(question(item, qi)));
+      paintStatus();
+    };
+    start();
   }
 
   // ───────── widgets ─────────
@@ -799,6 +1019,7 @@ const App = (() => {
   // ───────── routing ─────────
   function route() {
     Player.stop();
+    Piano.listen(null);
     mounted = [];
     const id = location.hash.slice(1);
     const lesson = LESSONS.find(l => l.id === id);
